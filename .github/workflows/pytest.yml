@@ -15,8 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
     permissions:
-      actions: read
+      actions: write
       statuses: write
+      id-token: write
+      pages: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,12 +45,6 @@ jobs:
           echo $output
           echo "coverage_percentage=$output" >> "$GITHUB_OUTPUT"
         working-directory: .
-      - name: Store coverage files
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-html
-          path: ./htmlcov
-          include-hidden-files: true
       - name: Add commit status
         uses: octodemo-resources/github-commit-status@v1
         with:
@@ -53,3 +52,11 @@ jobs:
           state: success
           description: Coverage ${{ steps.save-coverage-percentage.outputs.coverage_percentage }}%
           target_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload entire repository
+          path: './htmlcov'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
