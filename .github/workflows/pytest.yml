@@ -33,7 +33,7 @@ jobs:
         run: pdm run coverage run -m pytest
         working-directory: .
       - id: save-coverage-html
-        run: coverage html --title "Coverage for ${{ github.sha }}"
+        run: pdm run coverage html --title "Coverage for ${{ github.sha }}"
       - id: save-coverage-percentage
         run: |
           output=$(printf "%.02f" $(pdm run coverage json -q -o /dev/stdout | jq .totals.percent_covered))
