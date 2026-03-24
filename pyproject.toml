@@ -41,4 +41,5 @@ includes = ["src/"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "coverage>=7.13.5",
 ]
