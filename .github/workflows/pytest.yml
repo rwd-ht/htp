@@ -11,7 +11,7 @@ on:
       - synchronize
   workflow_dispatch:
 jobs:
-  test-backend:
+  PyTest:
     runs-on: ubuntu-latest
     # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
     permissions:
@@ -31,18 +31,18 @@ jobs:
         run: pdm install
       - name: Run tests
         run: pdm run coverage run -m pytest "Coverage for ${{ github.sha }}"
-        working-directory: backend
+        working-directory: .
       - id: save-coverage-percentage
         run: |
           output=$(printf "%.02f" $(pdm run coverage json -q -o /dev/stdout | jq .totals.percent_covered))
           echo $output
           echo "coverage_percentage=$output" >> "$GITHUB_OUTPUT"
-        working-directory: backend
+        working-directory: .
       - name: Store coverage files
         uses: actions/upload-artifact@v4
         with:
           name: coverage-html
-          path: backend/htmlcov
+          path: ./htmlcov
           include-hidden-files: true
       - name: Add commit status
         uses: octodemo-resources/github-commit-status@v1
