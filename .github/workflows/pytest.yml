@@ -5,10 +5,10 @@ on:
     branches:
       - dev
       - main
-  pull_request:
-    types:
-      - opened
-      - synchronize
+  # pull_request:
+  #   types:
+  #     - opened
+  #     - synchronize
   workflow_dispatch:
 jobs:
   PyTest:
@@ -32,6 +32,8 @@ jobs:
       - name: Run tests
         run: pdm run coverage run -m pytest
         working-directory: .
+      - id: save-coverage-html
+        run: coverage html --title "Coverage for ${{ github.sha }}"
       - id: save-coverage-percentage
         run: |
           output=$(printf "%.02f" $(pdm run coverage json -q -o /dev/stdout | jq .totals.percent_covered))
