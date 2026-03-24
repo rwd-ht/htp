@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: pdm install
       - name: Run tests
-        run: pdm run coverage run -m pytest "Coverage for ${{ github.sha }}"
+        run: pdm run coverage run -m pytest
         working-directory: .
       - id: save-coverage-percentage
         run: |
