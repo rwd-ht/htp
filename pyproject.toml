@@ -5,7 +5,7 @@ description = "HyeTech Platform"
 authors = [
     {name = "rwd-ht", email = "53872676+rwd-ht@users.noreply.github.com"},
 ]
-dependencies = []
+dependencies = ["pydantic>=2.13.0b2"]
 requires-python = ">=3.14"
 readme = "README.md"
 license = {text = "MIT"}
@@ -13,13 +13,6 @@ license = {text = "MIT"}
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
-
-[tool.pdm]
-distribution = true
-
-[tool.pdm.build]
-package-dir = "src"
-includes = ["src/"]
 
 [project.scripts]
 htp = "htp.cli:main"
@@ -36,3 +29,17 @@ profile = "black"
 force_single_line = true
 combine_as_imports = true
 add_imports = ["from __future__ import annotations"]
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.build]
+package-dir = "src"
+includes = ["src/"]
+
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "coverage>=7.13.5",
+]
