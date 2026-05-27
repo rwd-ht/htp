@@ -5,8 +5,8 @@ description = "HyeTech Platform"
 authors = [
     {name = "rwd-ht", email = "53872676+rwd-ht@users.noreply.github.com"},
 ]
-dependencies = ["pydantic>=2.13.0b2"]
-requires-python = ">=3.14"
+dependencies = ["pydantic>=2.13.0b2", "scp>=0.15.0", "rich>=14.3.3", "scrapli==2025.01.30", "pyserial>=3.5", "paramiko @ git+https://git@github.com/rwd-ht/paramiko-ht@v3.5.1", "pyyaml>=6.0.3"]
+requires-python = ">=3.12,<3.14"
 readme = "README.md"
 license = {text = "MIT"}
 
@@ -15,9 +15,39 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [project.scripts]
-htp = "htp.cli:main"
+htp = "htp.commands:main"
+
+[tool.coverage]
+show_contexts = true
+[tool.coverage.run]
+dynamic_context = "test_function"
 
 [tool.pytest.ini_options]
+# these tests rely on a custom set of devices.  they will need to be reworked
+# to connect to devices available and relevant to us
+addopts = """
+    --ignore=tests/htmiko/conftest.py
+    --ignore=tests/htmiko/performance/test_htmiko.py
+    --ignore=tests/htmiko/test_autodetect.py
+    --ignore=tests/htmiko/test_cmd_verify.py
+    --ignore=tests/htmiko/test_commit.py
+    --ignore=tests/htmiko/test_config.py
+    --ignore=tests/htmiko/test_config_acl.py
+    --ignore=tests/htmiko/test_exceptions.py
+    --ignore=tests/htmiko/test_save.py
+    --ignore=tests/htmiko/test_scp.py
+    --ignore=tests/htmiko/test_session_log.py
+    --ignore=tests/htmiko/test_show.py
+    --ignore=tests/htmiko/test_tcl.py
+    --ignore=tests/htmiko/test_timeout_read_timing.py
+    --ignore=tests/htmiko/test_timeout_read_until_pattern.py
+    --ignore=tests/htmiko/test_timeout_send_command.py
+    --ignore=tests/htmiko/test_timeout_send_command_timing.py
+    --ignore=tests/htmiko/unit/test_base_connection.py
+    --ignore=tests/htmiko/unit/test_clitools_helpers.py
+    --ignore=tests/htmiko/unit/test_clitools_outputters.py
+    --ignore=tests/htmiko/unit/test_utilities.py
+    """
 testpaths = ["tests"]
 
 [tool.black]
@@ -33,6 +63,9 @@ add_imports = ["from __future__ import annotations"]
 [tool.pdm]
 distribution = true
 
+[tool.pdm.venv]
+prompt = ".venv"
+
 [tool.pdm.build]
 package-dir = "src"
 includes = ["src/"]
@@ -40,6 +73,8 @@ includes = ["src/"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
+    "pytest>=9.0.3",
     "coverage>=7.13.5",
+    "debugpy>=1.8.20",
+    "pysass>=0.1.0",
 ]

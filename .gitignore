@@ -1,3 +1,14 @@
-.pdm-python
+# python
 __pycache__
+
+# tests
 .coverage
+test*.txt
+
+# test/development data
+configs/
+policies/
+analysis.json
+
+# applies to pdm users only
+.pdm-python

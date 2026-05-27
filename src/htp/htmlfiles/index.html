@@ -1,0 +1,301 @@
+{# Originally from Coverage.py https://github.com/coveragepy/coveragepy/ #}
+{# See licenses/LICENSE-COVERAGE #}
+{# Copyright 2001 Gareth Rees.  All rights reserved. #}
+{# Copyright 2004-2026 Ned Batchelder #}
+{# Copyright 2026 HyeTech #}
+
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta
+            http-equiv="Content-Type"
+            content="text/html; charset=utf-8"
+            data-theme="light"
+        />
+        <title>{{ title|escape }}</title>
+        <link rel="icon" sizes="32x32" href="{{ statics.favicon_32_png }}" />
+        <link rel="stylesheet" href="{{ statics.style_css }}" type="text/css" />
+        {% if extra_css %}
+        <link rel="stylesheet" href="{{ statics.extra_css }}" type="text/css" />
+        {% endif %}
+        <script src="{{ statics.coverage_html_js }}" defer></script>
+    </head>
+    <body class="indexfile">
+        <header>
+            <div class="content">
+                <h1>
+                    {{ title|escape }}:
+                    <span class="pc_cov">{{totals.pc_valid_str}}%</span>
+                </h1>
+
+                <aside id="help_panel_wrapper">
+                    <input id="help_panel_state" type="checkbox" />
+                    <label for="help_panel_state">
+                        <img
+                            id="keyboard_icon"
+                            src="{{ statics.keybd_closed_png }}"
+                            alt="Show/hide keyboard shortcuts"
+                        />
+                    </label>
+                    <div id="help_panel">
+                        <p class="legend">Shortcuts on this page</p>
+                        <div class="keyhelp">
+                            <p>
+                                <kbd>h</kbd>
+                                <kbd>l</kbd>
+                                <kbd>v</kbd>
+                                <kbd>i</kbd>
+                                <kbd>u</kbd>
+                                <kbd>m</kbd>
+                                <kbd>x</kbd>
+                                <kbd>m</kbd>
+                                <kbd>s</kbd>
+                                &nbsp; change column sorting
+                            </p>
+                            <p>
+                                <kbd>[</kbd>
+                                <kbd>]</kbd>
+                                &nbsp; prev/next file
+                            </p>
+                            <p><kbd>?</kbd> &nbsp; show/hide this help</p>
+                        </div>
+                    </div>
+                </aside>
+
+                <form id="filter_container">
+                    <input
+                        id="filter"
+                        type="text"
+                        value=""
+                        placeholder="filter..."
+                    />
+                    <div hidden="true">
+                        <input
+                            id="hide100"
+                            type="checkbox"
+                            {%
+                            if
+                            skip_covered
+                            %}checked
+                            disabled
+                            {%
+                            endif
+                            %}
+                        />
+                        <label for="hide100">hide covered</label>
+                    </div>
+                </form>
+
+                <h2>
+                    {% for ibtn in index_buttons %}
+                    <a
+                        class="button{% if ibtn.current %} current{% endif %}"
+                        {%
+                        if
+                        ibtn.url
+                        %}
+                        href="{{ ibtn.url }}"
+                        {%
+                        endif
+                        %}
+                        >{{ ibtn.label }}</a
+                    >{#-#} {% endfor %}
+                </h2>
+
+                <p class="text">
+                    <a class="nav" href="{{__url__}}"
+                        >htp v{{__version__}}</a
+                    >, created at {{ time_stamp }}
+                </p>
+            </div>
+        </header>
+
+        <main id="index">
+            <table class="index" data-sortable>
+                <thead>
+                    <tr class="tablehead grouphead">
+                        <th class="spacer">&nbsp;</th>
+                        {% if region_noun %}
+                        <th class="spacer">&nbsp;</th>
+                        {% endif %}
+                        <th class="spacer">&nbsp;</th>
+                        <th
+                            class="left"
+                            colspan="{% if has_arcs %}6{% else %}5{% endif %}"
+                        >
+                            Statistics
+                        </th>
+                        <th class="spacer">&nbsp;</th>
+                        <th class="left" colspan="2">Scoring</th>
+                    </tr>
+                    <tr class="tablehead" title="Click to sort">
+                        <th
+                            id="file"
+                            class="name"
+                            aria-sort="none"
+                            data-shortcut="h"
+                        >
+                            [h]ostname<span class="arrows"></span>
+                        </th>
+                        {% if region_noun %}
+                        <th
+                            id="region"
+                            class="name"
+                            aria-sort="none"
+                            data-default-sort-order="ascending"
+                            data-shortcut="n"
+                        >
+                            {{ region_noun }}<span class="arrows"></span>
+                        </th>
+                        {% endif %}
+                        <th class="spacer">&nbsp;</th>
+                        <th
+                            id="lines"
+                            aria-sort="none"
+                            data-default-sort-order="descending"
+                            data-shortcut="l"
+                        >
+                            [l]ines<span class="arrows"></span>
+                        </th>
+                        <th
+                            id="valid"
+                            aria-sort="none"
+                            data-default-sort-order="descending"
+                            data-shortcut="v"
+                        >
+                            [v]alid<span class="arrows"></span>
+                        </th>
+                        <th
+                            id="invalid"
+                            aria-sort="none"
+                            data-default-sort-order="descending"
+                            data-shortcut="i"
+                        >
+                            [i]nvalid<span class="arrows"></span>
+                        </th>
+                        <th
+                            id="untested"
+                            aria-sort="none"
+                            data-default-sort-order="descending"
+                            data-shortcut="u"
+                        >
+                            [u]ntested<span class="arrows"></span>
+                        </th>
+                        <th
+                            id="fixes"
+                            aria-sort="none"
+                            data-default-sort-order="descending"
+                            data-shortcut="x"
+                        >
+                            fi[x]es<span class="arrows"></span>
+                        </th>
+                        <th class="spacer">&nbsp;</th>
+                        <th
+                            id="statements_coverage"
+                            aria-sort="none"
+                            data-default-sort-order="descending"
+                            data-shortcut="m"
+                        >
+                            [m]atched<span class="arrows"></span>
+                        </th>
+                        <th
+                            id="branches_coverage"
+                            aria-sort="none"
+                            data-default-sort-order="descending"
+                            data-shortcut="s"
+                        >
+                            [s]core<span class="arrows"></span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for region in regions %}
+                    <tr class="region">
+                        <td class="name">
+                            <a href="{{region.url}}"
+                                >{{region.file|escape|pretty_file}}</a
+                            >
+                        </td>
+                        {% if region_noun %}
+                        <td class="name">
+                            <a href="{{region.url}}">{{region.description}}</a>
+                        </td>
+                        {% endif %}
+                        <td class="spacer">&nbsp;</td>
+                        <td>{{region.nums.o_lines}}</td>
+                        <td>{{region.nums.o_valid}}</td>
+                        <td>{{region.nums.o_invalid}}</td>
+                        <td>{{region.nums.o_untested}}</td>
+                        <td>{{region.nums.o_fixes}}</td>
+                        <td class="spacer">&nbsp;</td>
+                        <td data-ratio="{{region.nums.ratio_matched|pair}}">
+                            {{region.nums.pc_matched_str}}%
+                        </td>
+                        <td data-ratio="{{region.nums.ratio_valid|pair}}">
+                            {{region.nums.pc_valid_str}}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="total">
+                        <td class="name">Total</td>
+                        {% if region_noun %}
+                        <td class="name">&nbsp;</td>
+                        {% endif %}
+                        <td class="spacer">&nbsp;</td>
+                        <td>{{totals.o_lines}}</td>
+                        <td>{{totals.o_valid}}</td>
+                        <td>{{totals.o_invalid}}</td>
+                        <td>{{totals.o_untested}}</td>
+                        <td>{{totals.o_fixes}}</td>
+                        <td class="spacer">&nbsp;</td>
+                        <td data-ratio="{{totals.ratio_matched|pair}}">
+                            {{totals.pc_matched_str}}%
+                        </td>
+                        <td data-ratio="{{totals.ratio_valid|pair}}">
+                            {{totals.pc_valid_str}}%
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <p id="no_rows">No items found using the specified filter.</p>
+
+            {% if skipped_covered_msg %}
+            <p>{{ skipped_covered_msg }}</p>
+            {% endif %} {% if skipped_empty_msg %}
+            <p>{{ skipped_empty_msg }}</p>
+            {% endif %}
+        </main>
+
+        <footer>
+            <div class="content">
+                <p>
+                    <a class="nav" href="{{__url__}}"
+                        >htp v{{__version__}}</a
+                    >, created at {{ time_stamp }}
+                </p>
+            </div>
+            <aside class="hidden">
+                <a id="prevFileLink" class="nav" href="{{ final_html }}"></a>
+                <a id="nextFileLink" class="nav" href="{{ first_html }}"></a>
+                <button
+                    type="button"
+                    class="button_prev_file"
+                    data-shortcut="["
+                ></button>
+                <button
+                    type="button"
+                    class="button_next_file"
+                    data-shortcut="]"
+                ></button>
+                <button
+                    type="button"
+                    class="button_show_hide_help"
+                    data-shortcut="?"
+                ></button>
+            </aside>
+        </footer>
+    </body>
+</html>

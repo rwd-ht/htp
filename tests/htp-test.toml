@@ -1,0 +1,14 @@
+# This is a TOML document
+
+name = "test"
+
+[html]
+output_dir = "tests/report/"
+
+[policy]
+output_file = "analysis.json"
+include_dir = "tests/includes/"
+policies_dir = "tests/policies/"
+
+[backups]
+running_dir = "tests/configs/"

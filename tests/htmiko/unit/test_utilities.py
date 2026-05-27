@@ -1,0 +1,298 @@
+#!/usr/bin/env python
+
+# Originally from Netmiko https://github.com/ktbyers/netmiko
+# see licenses/LICENSE-NETMIKO
+# Copyright 2016-2026 Kirk Byers
+# Copyright 2026 HyeTech
+
+from __future__ import annotations
+
+import importlib.util
+import os
+import sys
+from os.path import dirname
+from os.path import join
+from os.path import relpath
+from pathlib import Path
+
+import pytest
+
+from htmiko import utilities
+
+RESOURCE_FOLDER = join(dirname(dirname(__file__)), "etc")
+RELATIVE_RESOURCE_FOLDER = join(dirname(dirname(relpath(__file__))), "etc")
+CONFIG_FILENAME = join(RESOURCE_FOLDER, ".htmiko.yml")
+
+is_linux = sys.platform == "linux" or sys.platform == "linux2"
+skip_if_not_linux = pytest.mark.skipif(not is_linux, reason="Test Requires Linux")
+
+SHOW_RUN_INT = """Building configuration...
+
+Current configuration : 98 bytes
+!
+interface GigabitEthernet0/0/1
+ description *** TTP Testing ***
+ no ip address
+ shutdown
+ media-type rj45
+ negotiation auto
+end"""
+
+# SHOW_VER_HEADER is just for linters and line length
+SHOW_VER_HEADER = (
+    "Cisco IOS Software, C3560CX Software (C3560CX-UNIVERSALK9-M), "
+    "Version 15.2(4)E7, RELEASE SOFTWARE (fc2)"
+)
+SHOW_VERSION = SHOW_VER_HEADER + """
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2018 by Cisco Systems, Inc.
+Compiled Tue 18-Sep-18 13:20 by prod_rel_team
+
+ROM: Bootstrap program is C3560CX boot loader
+BOOTLDR: C3560CX Boot Loader (C3560CX-HBOOT-M) Version 15.2(4r)E5, RELEASE SOFTWARE (fc4)
+
+3560CX uptime is 5 weeks, 1 day, 2 hours, 30 minutes
+System returned to ROM by power-on
+System restarted at 11:45:26 PDT Tue May 7 2019
+System image file is "flash:c3560cx-universalk9-mz.152-4.E7.bin"
+Last reload reason: power-on
+
+
+
+This product contains cryptographic features and is subject to United
+States and local country laws governing import, export, transfer and
+use. Delivery of Cisco cryptographic products does not imply
+third-party authority to import, export, distribute or use encryption.
+Importers, exporters, distributors and users are responsible for
+compliance with U.S. and local country laws. By using this product you
+agree to comply with applicable laws and regulations. If you are unable
+to comply with U.S. and local laws, return this product immediately.
+
+A summary of U.S. laws governing Cisco cryptographic products may be found at:
+http://www.cisco.com/wwl/export/crypto/tool/stqrg.html
+
+If you require further assistance please contact us by sending email to
+export@cisco.com.
+
+License Level: ipservices
+License Type: Permanent Right-To-Use
+Next reload license Level: ipservices
+
+cisco WS-C3560CX-8PC-S (APM86XXX) processor (revision A0) with 524288K bytes of memory.
+Processor board ID FOCXXXXXXXX
+Last reset from power-on
+5 Virtual Ethernet interfaces
+12 Gigabit Ethernet interfaces
+The password-recovery mechanism is enabled.
+
+512K bytes of flash-simulated non-volatile configuration memory.
+Base ethernet MAC Address       : 12:34:56:78:9A:BC
+Motherboard assembly number     : 86-75309-01
+Power supply part number        : 867-5309-01
+Motherboard serial number       : FOCXXXXXXXX
+Power supply serial number      : FOCXXXXXXXX
+Model revision number           : A0
+Motherboard revision number     : A0
+Model number                    : WS-C3560CX-8PC-S
+System serial number            : FOCXXXXXXXX
+Top Assembly Part Number        : 86-7530-91
+Top Assembly Revision Number    : A0
+Version ID                      : V01
+CLEI Code Number                : CMM1400DRA
+Hardware Board Revision Number  : 0x02
+
+
+Switch Ports Model                     SW Version            SW Image
+------ ----- -----                     ----------            ----------
+*    1 12    WS-C3560CX-8PC-S          15.2(4)E7             C3560CX-UNIVERSALK9-M
+
+
+Configuration register is 0xF
+"""
+
+
+def test_load_yaml_file():
+    """Read a YAML file successfully"""
+    filename = join(RESOURCE_FOLDER, "yaml_test.yml")
+    expected = {
+        "answer": 42,
+        "hello": "world",
+        "complex": {"truth": False, "key": "value"},
+    }
+    assert utilities.load_yaml_file(filename) == expected
+
+
+def test_invalid_yaml_file():
+    """Try to read an invalid YAML file"""
+    filename = join(RESOURCE_FOLDER, "this_should_not_exist.yml")
+    try:
+        utilities.load_yaml_file(filename)
+    except SystemExit as exc:
+        assert isinstance(exc, SystemExit)
+        return
+    assert False
+
+
+def test_find_cfg_file():
+    """
+    Search for htmiko_tools config file in the following order:
+
+    HTMIKO_TOOLS_CFG environment variable
+    Current directory
+    Home directory
+
+    Look for file named: .htmiko.yml or htmiko.yml
+    """
+    # Search using environment variable (point directly at end file)
+    os.environ["HTMIKO_TOOLS_CFG"] = join(RESOURCE_FOLDER, ".htmiko.yml")
+    assert utilities.find_cfg_file() == CONFIG_FILENAME
+
+    # Search using environment variable (pointing at directory)
+    os.environ["HTMIKO_TOOLS_CFG"] = RESOURCE_FOLDER
+    assert utilities.find_cfg_file() == CONFIG_FILENAME
+    cwd = os.getcwd()
+    try:
+        os.chdir(dirname(__file__))
+
+        # Environment var should be preferred over current dir
+        assert utilities.find_cfg_file() == CONFIG_FILENAME
+
+        #  Delete env var and verify current dir is returned
+        del os.environ["HTMIKO_TOOLS_CFG"]
+        assert utilities.find_cfg_file() == "./.htmiko.yml"
+    finally:
+        # Change directory back to previous state
+        os.chdir(cwd)
+
+    # Verify explicit call using full filename
+    assert utilities.find_cfg_file(CONFIG_FILENAME) == CONFIG_FILENAME
+
+
+def test_load_cfg_file():
+    """Try to load a configuration file"""
+    expected = {
+        "rtr1": {
+            "device_type": "cisco_ios",
+            "ip": "10.10.10.1",
+            "username": "admin",
+            "password": "cisco123",
+            "secret": "cisco123",
+        },
+        "rtr2": {
+            "device_type": "cisco_ios",
+            "ip": "10.10.10.2",
+            "username": "admin",
+            "password": "cisco123",
+            "secret": "cisco123",
+        },
+        "cisco": ["rtr1", "rtr2"],
+    }
+    assert utilities.load_devices(CONFIG_FILENAME) == expected
+
+
+def test_obtain_all_devices():
+    """Dynamically create 'all' group."""
+    htmiko_tools_load = utilities.load_devices(CONFIG_FILENAME)
+    expected = {
+        "rtr1": {
+            "device_type": "cisco_ios",
+            "ip": "10.10.10.1",
+            "username": "admin",
+            "password": "cisco123",
+            "secret": "cisco123",
+        },
+        "rtr2": {
+            "device_type": "cisco_ios",
+            "ip": "10.10.10.2",
+            "username": "admin",
+            "password": "cisco123",
+            "secret": "cisco123",
+        },
+    }
+    result = utilities.obtain_all_devices(htmiko_tools_load)
+    assert result == expected
+
+
+def test_find_htmiko_dir():
+    """Try to get the htmiko_dir"""
+    folder = dirname(__file__)
+    os.environ["HTMIKO_DIR"] = folder
+    result = utilities.find_htmiko_dir()
+    assert result[0] == folder
+    assert result[1].endswith("/tmp")
+
+
+def test_invalid_htmiko_dir():
+    """Try with an invalid htmiko_base_dir"""
+    os.environ["HTMIKO_DIR"] = "/"
+    try:
+        utilities.find_htmiko_dir()
+    except ValueError as exc:
+        assert isinstance(exc, ValueError)
+        return
+    assert False
+
+
+def test_string_to_bytes():
+    """Convert string to bytes"""
+    assert utilities.write_bytes("test") == b"test"
+
+
+def test_bytes_to_bytes():
+    """Convert bytes to bytes"""
+    result = b"hello world"
+    assert utilities.write_bytes(result) == result
+
+
+def test_invalid_data_to_bytes():
+    """Convert an invalid data type to bytes"""
+    try:
+        utilities.write_bytes(456_779)
+    except ValueError as exc:
+        assert isinstance(exc, ValueError)
+        return
+
+    assert False
+
+
+def test_ensure_resource_dir_exists():
+    """Ensure that the resource folder exists"""
+    utilities.ensure_dir_exists(RESOURCE_FOLDER)
+
+
+def test_ensure_file_exists():
+    """Ensure that a file makes ensure_dir_exists raise an error"""
+    try:
+        utilities.ensure_dir_exists(__file__)
+    except ValueError as exc:
+        assert isinstance(exc, ValueError)
+        return
+    assert False
+
+
+def test_nokia_context_filter():
+    data = [
+        "(ex)[configure aaa]",
+        "*(ex)[configure aaa]",
+        "!(ex)[configure aaa]",
+        "[]",
+        '(ex)[configure router "Base" bgp]',
+        "(ro)[]",
+        "(ex)[]",
+        '[show router "Base" bgp]',
+        '!*[pr:configure router "Base" bgp]',
+    ]
+
+    results = []
+
+    for test_case in data:
+        out = utilities.nokia_context_filter(test_case)
+        results.append(out)
+
+    # All strings in results should be null-string
+    assert any(results) is False
+
+    # Create a case that won't be stripped
+    test_case = 'foo[show router "Base" bgp]'
+    out = utilities.nokia_context_filter(test_case)
+    assert out != ""

@@ -1,0 +1,258 @@
+{# Originally from Coverage.py https://github.com/coveragepy/coveragepy/ #}
+{# See licenses/LICENSE-COVERAGE #}
+{# Copyright 2001 Gareth Rees.  All rights reserved. #}
+{# Copyright 2004-2026 Ned Batchelder #}
+{# Copyright 2026 HyeTech #}
+
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <title>
+            Policy report for {{relative_filename|escape}}: {{nums.pc_valid_str}}%
+        </title>
+        <link rel="icon" sizes="32x32" href="{{ statics.favicon_32_png }}" />
+        <link rel="stylesheet" href="{{ statics.style_css }}" type="text/css" />
+        {% if extra_css %}
+        <link rel="stylesheet" href="{{ statics.extra_css }}" type="text/css" />
+        {% endif %} {% if contexts_json %}
+        <script type="text/javascript">
+            contexts = {{ contexts_json }}
+        </script>
+        {% endif %}
+
+        <script src="{{ statics.coverage_html_js }}" defer></script>
+    </head>
+    <body class="pyfile">
+        <dialog id="fixesWindow">
+            <label for="fixText"
+                >Fix text for {{ relative_filename|escape }}:</label
+            >
+
+            <textarea
+                id="fixText"
+                name="fixText"
+                rows="{{ fix_text_rows }}"
+                cols="{{ fix_text_cols }}"
+                spellcheck="false"
+            >
+{{ fix_text }}
+</textarea
+            >
+
+            <button type="button" id="closeFixes">Close</button>
+        </dialog>
+
+        <header>
+            <div class="content">
+                <h1>
+                    <span class="text">Policy report for </span
+                    ><b>{{relative_filename|escape|pretty_file}}</b>:
+                    <span class="pc_cov">{{nums.pc_valid_str}}%</span>
+                </h1>
+
+                <aside id="help_panel_wrapper">
+                    <input id="help_panel_state" type="checkbox" />
+                    <label for="help_panel_state">
+                        <img
+                            id="keyboard_icon"
+                            src="{{ statics.keybd_closed_png }}"
+                            alt="Show/hide keyboard shortcuts"
+                        />
+                    </label>
+                    <div id="help_panel">
+                        <p class="legend">Shortcuts on this page</p>
+                        <div class="keyhelp">
+                            <p>
+                                <kbd>v</kbd>
+                                <kbd>i</kbd>
+                                <kbd>u</kbd>
+                                <kbd>x</kbd>
+                                &nbsp; toggle line displays
+                            </p>
+                            <p>
+                                <kbd>f</kbd>
+                                &nbsp; open fix window
+                            </p>
+                            <p>
+                                <kbd>j</kbd>
+                                <kbd>k</kbd>
+                                &nbsp; next/prev highlighted chunk
+                            </p>
+                            <p><kbd>0</kbd> &nbsp; (zero) top of page</p>
+                            <p>
+                                <kbd>1</kbd> &nbsp; (one) first highlighted
+                                chunk
+                            </p>
+                            <p>
+                                <kbd>[</kbd>
+                                <kbd>]</kbd>
+                                &nbsp; prev/next file
+                            </p>
+                            <p><kbd>u</kbd> &nbsp; up to the index</p>
+                            <p><kbd>?</kbd> &nbsp; show/hide this help</p>
+                        </div>
+                    </div>
+                </aside>
+
+                <h2>
+                    <span class="text">{{nums.o_lines}} lines &nbsp;</span>
+                    <button
+                        type="button"
+                        class="{{category.oval}} button_toggle_oval"
+                        value="oval"
+                        data-shortcut="v"
+                        title="Toggle lines valid"
+                    >
+                        {{nums.o_valid}}<span class="text"> [v]alid</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="{{category.oinv}} button_toggle_oinv"
+                        value="oinv"
+                        data-shortcut="i"
+                        title="Toggle lines invalid"
+                    >
+                        {{nums.o_invalid}}<span class="text"> [i]nvalid</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="{{category.ount}} button_toggle_ount"
+                        value="ount"
+                        data-shortcut="x"
+                        title="Toggle lines untested"
+                    >
+                        {{nums.o_untested}}<span class="text"> [u]ntested</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="{{category.ofix}} button_toggle_ofix"
+                        value="ofix"
+                        data-shortcut="p"
+                        title="Toggle fix lines"
+                    >
+                        {{nums.o_fixes}}<span class="text"> fi[x]es</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        id="openFixes"
+                        class="button"
+                        data-shortcut="f"
+                        title="Open fix window"
+                    >
+                        [f]ix window
+                    </button>
+                </h2>
+
+                <p class="text">
+                    <a id="prevFileLink" class="nav" href="{{ prev_html }}"
+                        >&#xab; prev</a
+                    >
+                    &nbsp; &nbsp;
+                    <a id="indexLink" class="nav" href="index.html"
+                        >&Hat; index</a
+                    >
+                    &nbsp; &nbsp;
+                    <a id="nextFileLink" class="nav" href="{{ next_html }}"
+                        >&#xbb; next</a
+                    >
+                    &nbsp; &nbsp; &nbsp;
+                    <a class="nav" href="{{__url__}}"
+                        >htp v{{__version__}}</a
+                    >, created at {{ time_stamp }}
+                </p>
+
+                <aside class="hidden">
+                    <button
+                        type="button"
+                        class="button_next_chunk"
+                        data-shortcut="j"
+                    ></button>
+                    <button
+                        type="button"
+                        class="button_prev_chunk"
+                        data-shortcut="k"
+                    ></button>
+                    <button
+                        type="button"
+                        class="button_top_of_page"
+                        data-shortcut="0"
+                    ></button>
+                    <button
+                        type="button"
+                        class="button_first_chunk"
+                        data-shortcut="1"
+                    ></button>
+                    <button
+                        type="button"
+                        class="button_prev_file"
+                        data-shortcut="["
+                    ></button>
+                    <button
+                        type="button"
+                        class="button_next_file"
+                        data-shortcut="]"
+                    ></button>
+                    <button
+                        type="button"
+                        class="button_to_index"
+                        data-shortcut="u"
+                    ></button>
+                    <button
+                        type="button"
+                        class="button_show_hide_help"
+                        data-shortcut="?"
+                    ></button>
+                </aside>
+            </div>
+        </header>
+
+        <main id="source">
+            {% for line in lines -%} {% joined %}
+            <p class="{{line.css_class}}">
+                <span class="n"
+                    ><a id="t{{line.number}}" href="#t{{line.number}}"
+                        >{% if line.number|is_negative %}&nbsp;{% else
+                        %}{{line.number}}{% endif %}</a
+                    ></span
+                >
+                <span class="t">{{line.html}}&nbsp;</span>
+                {% if line.context_list %}
+                <input type="checkbox" id="ctxs{{line.number}}" />
+                {% endif %} {# Things that should float right in the line. #}
+                <span class="r">
+                    {% if line.annotate %}
+                    <span class="annotate short">{{line.annotate}}</span>
+                    <span class="annotate long">{{line.annotate_long}}</span>
+                    {% endif %} {% if line.contexts %}
+                    <label for="ctxs{{line.number}}" class="ctx"
+                        >{{ line.contexts_label }}</label
+                    >
+                    {% endif %}
+                </span>
+                {# Things that should appear below the line. #} {% if
+                line.context_str %}
+                <span class="ctxs">{{ line.context_str }}</span>
+                {% endif %}
+            </p>
+            {% endjoined %} {% endfor %}
+        </main>
+
+        <footer>
+            <div class="content">
+                <p>
+                    <a class="nav" href="{{ prev_html }}">&#xab; prev</a> &nbsp;
+                    &nbsp;
+                    <a class="nav" href="index.html">&Hat; index</a> &nbsp;
+                    &nbsp;
+                    <a class="nav" href="{{ next_html }}">&#xbb; next</a>
+                    &nbsp; &nbsp; &nbsp;
+                    <a class="nav" href="{{__url__}}"
+                        >htp v{{__version__}}</a
+                    >, created at {{ time_stamp }}
+                </p>
+            </div>
+        </footer>
+    </body>
+</html>
