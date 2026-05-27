@@ -1,14 +1,35 @@
 [project]
 name = "htplatform"
-version = "0.0.1b"
+version = "0.0.2"
 description = "HyeTech Platform"
 authors = [
     {name = "rwd-ht", email = "53872676+rwd-ht@users.noreply.github.com"},
 ]
-dependencies = ["pydantic>=2.13.0b2", "scp>=0.15.0", "rich>=14.3.3", "scrapli==2025.01.30", "pyserial>=3.5", "paramiko @ git+https://git@github.com/rwd-ht/paramiko-ht@v3.5.1", "pyyaml>=6.0.3"]
-requires-python = ">=3.12,<3.14"
+dependencies = [
+"pydantic>=2.13.0b2",
+"scp>=0.15.0",
+"rich>=14.3.3",
+"scrapli==2025.01.30",
+"pyserial>=3.5",
+"paramiko @ git+https://git@github.com/rwd-ht/paramiko-ht@v3.5.1",
+"pyyaml>=6.0.3",
+ ]
+requires-python = ">=3.12"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE*", "licenses/*"]
+
+classifiers = [
+"Topic :: System :: Networking",
+"Development Status :: 2 - Pre-Alpha",
+"Programming Language :: Python :: 3",
+"Programming Language :: Python :: 3.12",
+"Programming Language :: Python :: 3.13",
+"Programming Language :: Python :: 3.14",
+]
+
+[project.urls]
+repository = "https://github.com/rwd-ht/htp"
 
 [build-system]
 requires = ["pdm-backend"]
