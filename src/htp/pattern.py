@@ -151,7 +151,11 @@ class CompiledLinePolicy:
             case None, FixType.PREFIX_NO:
                 raise RuntimeError(f"No string provided for no-prefix")
             case _, FixType.PREFIX_NO:
-                return f"no {line}"
+                # invert if no exists
+                _PREFIX_NO = "no "
+                if line.startswith(_PREFIX_NO):
+                    return line.replace(_PREFIX_NO, "")
+                return f"{_PREFIX_NO}{line}"
             case None, FixType.SUB:
                 raise RuntimeError(f"No string provided for sub")
             case _, FixType.SUB:

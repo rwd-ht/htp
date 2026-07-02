@@ -47,18 +47,25 @@ class ConfigInvalidException(HTMikoBaseException):
 
 
 class WriteException(HTMikoBaseException):
-    """General exception indicating an error occurred during a HTMiko write operation."""
+    """General exception indicating an error occurred during a write operation."""
 
     pass
 
 
 class ReadException(HTMikoBaseException):
-    """General exception indicating an error occurred during a HTMiko read operation."""
+    """General exception indicating an error occurred during a read operation."""
 
     pass
 
 
 class ReadTimeout(ReadException):
-    """General exception indicating an error occurred during a HTMiko read operation."""
+    output: str | None = None
+    timeout: int | None = None
+    """General exception indicating an error occurred during a read operation."""
+
+    def __init__(self, message, output: str | None = None, timeout: int | None = None):
+        self.output = output
+        self.timeout = timeout
+        super().__init__(message)
 
     pass

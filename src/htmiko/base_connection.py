@@ -14,38 +14,22 @@ Also defines methods that should generally be supported by child classes
 
 from __future__ import annotations
 
+import collections
 import functools
 import io
-import itertools
 import logging
+import os
+import pathlib
 import re
 import socket
+import threading
 import time
-from collections import deque
-from os import path
-from pathlib import Path
-from threading import Lock
-from types import TracebackType
-from typing import TYPE_CHECKING
-from typing import Any
-from typing import Callable
-from typing import Deque
-from typing import Dict
-from typing import Iterator
-from typing import List
-from typing import Optional
-from typing import Sequence
-from typing import TextIO
-from typing import Tuple
-from typing import Type
-from typing import TypeVar
-from typing import Union
-from typing import cast
+import types
+import typing
 
 import paramiko
 import serial
 
-from htmiko import log
 from htmiko import telnet_proxy
 from htmiko._telnetlib import telnetlib
 from htmiko.channel import Channel
@@ -63,16 +47,25 @@ from htmiko.utilities import check_serial_port
 from htmiko.utilities import select_cmd_verify
 from htmiko.utilities import write_bytes
 
-if TYPE_CHECKING:
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
+DEBUG_WRITE = os.getenv("HTMIKO_DEBUG_WRITE")
+DEBUG_WRITE_DIR = "debug_write"
+HTMIKO_ABS_TIMEOUT = float(os.getenv("HTMIKO_ABS_TIMEOUT", 600))
+
+MATCH_NOTHING = f"(?!)"
+
+if typing.TYPE_CHECKING:
     from os import PathLike
 
 # For decorators
-F = TypeVar("F", bound=Callable[..., Any])
+F = typing.TypeVar("F", bound=typing.Callable[..., typing.Any])
 
 
 # Logging filter for #2597
 class SecretsFilter(logging.Filter):
-    def __init__(self, no_log: Optional[Dict[Any, str]] = None) -> None:
+    def __init__(self, no_log: dict[typing.Any, str] | None = None) -> None:
         self.no_log = no_log
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -85,7 +78,11 @@ class SecretsFilter(logging.Filter):
 
 def lock_channel(func: F) -> F:
     @functools.wraps(func)
-    def wrapper_decorator(self: "BaseConnection", *args: Any, **kwargs: Any) -> Any:
+    def wrapper_decorator(
+        self: "BaseConnection",
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> typing.Any:
         self._lock_htmiko_session()
         try:
             return_val = func(self, *args, **kwargs)
@@ -94,12 +91,16 @@ def lock_channel(func: F) -> F:
             self._unlock_htmiko_session()
         return return_val
 
-    return cast(F, wrapper_decorator)
+    return typing.cast(F, wrapper_decorator)
 
 
 def flush_session_log(func: F) -> F:
     @functools.wraps(func)
-    def wrapper_decorator(self: "BaseConnection", *args: Any, **kwargs: Any) -> Any:
+    def wrapper_decorator(
+        self: BaseConnection,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> typing.Any:
         try:
             return_val = func(self, *args, **kwargs)
         finally:
@@ -108,17 +109,17 @@ def flush_session_log(func: F) -> F:
                 self.session_log.flush()
         return return_val
 
-    return cast(F, wrapper_decorator)
+    return typing.cast(F, wrapper_decorator)
 
 
 def log_writes(func: F) -> F:
     """Handle both session_log and log of writes."""
 
     @functools.wraps(func)
-    def wrapper_decorator(self: "BaseConnection", out_data: str) -> None:
+    def wrapper_decorator(self: BaseConnection, out_data: str) -> None:
         func(self, out_data)
         try:
-            log.debug(
+            logger.debug(
                 "write_channel: {}".format(
                     str(write_bytes(out_data, encoding=self.encoding)),
                 ),
@@ -131,7 +132,7 @@ def log_writes(func: F) -> F:
             pass
         return None
 
-    return cast(F, wrapper_decorator)
+    return typing.cast(F, wrapper_decorator)
 
 
 class BaseConnection:
@@ -146,25 +147,25 @@ class BaseConnection:
         ip: str = "",
         host: str = "",
         username: str = "",
-        password: Optional[str] = None,
+        password: str | None = None,
         secret: str = "",
-        port: Optional[int] = None,
+        port: int | None = None,
         device_type: str = "",
         verbose: bool = False,
         global_delay_factor: float = 1.0,
-        global_cmd_verify: Optional[bool] = None,
+        global_cmd_verify: bool | None = None,
         use_keys: bool = False,
-        key_file: Optional[str] = None,
-        pkey: Optional[paramiko.PKey] = None,
-        passphrase: Optional[str] = None,
-        disabled_algorithms: Optional[Dict[str, Any]] = None,
+        key_file: str | None = None,
+        pkey: paramiko.PKey | None = None,
+        passphrase: str | None = None,
+        disabled_algorithms: dict[str, typing.Any] | None = None,
         disable_sha2_fix: bool = False,
         allow_agent: bool = False,
         ssh_strict: bool = False,
         system_host_keys: bool = False,
         alt_host_keys: bool = False,
         alt_key_file: str = "",
-        ssh_config_file: Optional[str] = None,
+        ssh_config_file: str | None = None,
         #
         # Connect timeouts
         # ssh-connect --> TCP conn (conn_timeout) --> SSH-banner (banner_timeout)
@@ -173,26 +174,26 @@ class BaseConnection:
         # telnet connection and for other blocking operations).
         conn_timeout: float = 10,
         # Timeout to wait for authentication response
-        auth_timeout: Optional[float] = None,
+        auth_timeout: float | None = None,
         banner_timeout: float = 15,  # Timeout to wait for the banner to be presented
         # Other timeouts
         blocking_timeout: float = 20,  # Read blocking timeout
         timeout: int = 100,  # TCP connect timeout | overloaded to read-loop timeout
         session_timeout: float = 60,  # Used for locking/sharing the connection
-        read_timeout_override: Optional[float] = None,
+        read_timeout_override: float | None = None,
         keepalive: float = 0,
-        default_enter: Optional[str] = None,
-        response_return: Optional[str] = None,
-        serial_settings: Optional[Dict[str, Any]] = None,
+        default_enter: str | None = None,
+        response_return: str | None = None,
+        serial_settings: dict[str, typing.Any] | None = None,
         fast_cli: bool = True,
         _legacy_mode: bool = False,
-        session_log: Optional[Union[str, io.BufferedIOBase, SessionLog]] = None,
+        session_log: str | io.BufferedIOBase | SessionLog | None = None,
         session_log_record_writes: bool = False,
         session_log_file_mode: str = "write",
         allow_auto_change: bool = False,
         encoding: str = "utf-8",
-        sock: Optional[socket.socket] = None,
-        sock_telnet: Optional[Dict[str, Any]] = None,
+        sock: socket.socket | None = None,
+        sock_telnet: dict[str, typing.Any] | None = None,
         auto_connect: bool = True,
         delay_factor_compat: bool = False,
         disable_lf_normalization: bool = False,
@@ -312,12 +313,9 @@ class BaseConnection:
                 (default: False)
         """
 
-        self.remote_conn: Union[
-            None,
-            telnetlib.Telnet,
-            paramiko.Channel,
-            serial.Serial,
-        ] = None
+        self.remote_conn: None | telnetlib.Telnet | paramiko.Channel | serial.Serial = (
+            None
+        )
         # Does the platform support a configuration mode
         self._config_mode = True
         self._read_buffer = ""
@@ -384,7 +382,7 @@ class BaseConnection:
             no_log["secret"] = self.secret
         # Always sanitize username and password
         self._secrets_filter = SecretsFilter(no_log=no_log)
-        log.addFilter(self._secrets_filter)
+        logger.addFilter(self._secrets_filter)
 
         # close the session_log if we open the file
         if session_log is not None:
@@ -435,7 +433,7 @@ class BaseConnection:
 
         # set in set_base_prompt method
         self.base_prompt = ""
-        self._session_locker = Lock()
+        self._session_locker = threading.Lock()
 
         # determine if telnet or SSH
         if "_telnet" in device_type:
@@ -456,7 +454,7 @@ class BaseConnection:
             # Options for SSH host_keys
             self.use_keys = use_keys
             self.key_file = (
-                path.abspath(path.expanduser(key_file)) if key_file else None
+                os.path.abspath(os.path.expanduser(key_file)) if key_file else None
             )
             if self.use_keys is True:
                 self._key_check()
@@ -498,9 +496,9 @@ class BaseConnection:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[TracebackType],
+        exc_type: BaseException | None,
+        exc_value: BaseException | None,
+        traceback: types.TracebackType | None,
     ) -> None:
         """Gracefully close connection on Context Manager exit."""
         self.disconnect()
@@ -526,7 +524,7 @@ class BaseConnection:
             raise HTMikoTimeoutException(msg)
         return False
 
-    def _lock_htmiko_session(self, start: Optional[float] = None) -> bool:
+    def _lock_htmiko_session(self, start: float | None = None) -> bool:
         """Try to acquire the session lock. If not available, wait in the queue until
         the channel is available again.
 
@@ -570,7 +568,7 @@ key_file: {self.key_file}
         if self.key_file is None:
             raise ValueError(msg)
 
-        my_key_file = Path(self.key_file)
+        my_key_file = pathlib.Path(self.key_file)
         if not my_key_file.is_file():
             raise ValueError(msg)
         return True
@@ -589,13 +587,13 @@ key_file: {self.key_file}
         """Returns a boolean flag with the state of the connection."""
         null = chr(0)
         if self.remote_conn is None:
-            log.error("Connection is not initialised, is_alive returns False")
+            logger.error("Connection is not initialised, is_alive returns False")
             return False
         if self.protocol == "telnet":
             try:
                 # Try sending IAC + NOP (IAC is telnet way of sending command)
                 # IAC = Interpret as Command; it comes before the NOP.
-                log.debug("Sending IAC + NOP")
+                logger.debug("Sending IAC + NOP")
                 # Need to send multiple times to test connection
                 assert isinstance(self.remote_conn, telnetlib.Telnet)
                 telnet_socket = self.remote_conn.get_socket()  # type: ignore
@@ -609,7 +607,7 @@ key_file: {self.key_file}
             # SSH
             try:
                 # Try sending ASCII null byte to maintain the connection alive
-                log.debug("Sending the NULL byte")
+                logger.debug("Sending the NULL byte")
                 self.write_channel(null)
                 assert isinstance(self.remote_conn, paramiko.Channel)
                 assert self.remote_conn.transport is not None
@@ -617,7 +615,7 @@ key_file: {self.key_file}
                 assert isinstance(result, bool)
                 return result
             except (socket.error, EOFError):
-                log.error("Unable to send", exc_info=True)
+                logger.error("Unable to send", exc_info=True)
                 # If unable to send, we can tell for sure that the connection is unusable
                 return False
         return False
@@ -642,7 +640,7 @@ key_file: {self.key_file}
 
         if self.ansi_escape_codes:
             new_data = self.strip_ansi_escape_codes(new_data)
-        log.debug(f"read_channel: {new_data}")
+        logger.debug(f"read_channel: {new_data}")
         if self.session_log:
             self.session_log.write(new_data)
 
@@ -698,7 +696,7 @@ This can be problemtic when used in read_until_pattern().
 
 You should ensure that you use either non-capture groups i.e. '(?:' or that the
 parenthesis completely wrap the pattern '(pattern)'"""
-                    log.debug(msg)
+                    logger.debug(msg)
                 results = re.split(pattern, output, maxsplit=1, flags=re_flags)
 
                 # The string matched by pattern must be retained in the output string.
@@ -708,6 +706,7 @@ parenthesis completely wrap the pattern '(pattern)'"""
                     pattern = f"({pattern})"
                     results = re.split(pattern, output, maxsplit=1, flags=re_flags)
 
+                match_str = buffer = None
                 if len(results) == 3:
                     output, match_str, buffer = results
 
@@ -725,7 +724,7 @@ results={results}
                 output = output + match_str
                 if buffer:
                     self._read_buffer += buffer
-                log.debug(f"Pattern found: {pattern} {output}")
+                logger.debug(f"Pattern found: {pattern} {output}")
                 return output
             time.sleep(loop_delay)
 
@@ -794,7 +793,6 @@ results={results}
         read_timeout: float = 10.0,
         read_entire_line: bool = False,
         re_flags: int = 0,
-        max_loops: Optional[int] = None,
     ) -> str:
         """Read channel up to and including self.base_prompt."""
         pattern = re.escape(self.base_prompt)
@@ -803,7 +801,6 @@ results={results}
         return self.read_until_pattern(
             pattern=pattern,
             re_flags=re_flags,
-            max_loops=max_loops,
             read_timeout=read_timeout,
         )
 
@@ -813,7 +810,6 @@ results={results}
         read_timeout: float = 10.0,
         read_entire_line: bool = False,
         re_flags: int = 0,
-        max_loops: Optional[int] = None,
     ) -> str:
         """Read until either self.base_prompt or pattern is detected."""
         prompt_pattern = re.escape(self.base_prompt)
@@ -826,7 +822,6 @@ results={results}
         return self.read_until_pattern(
             pattern=combined_pattern,
             re_flags=re_flags,
-            max_loops=max_loops,
             read_timeout=read_timeout,
         )
 
@@ -984,7 +979,7 @@ results={results}
         self.set_terminal_width()
         self.disable_paging()
 
-    def _use_ssh_config(self, dict_arg: Dict[str, Any]) -> Dict[str, Any]:
+    def _use_ssh_config(self, dict_arg: dict[str, typing.Any]) -> dict[str, typing.Any]:
         """Update SSH connection parameters based on contents of SSH config file.
 
         :param dict_arg: Dictionary of SSH connection parameters
@@ -993,9 +988,9 @@ results={results}
 
         # Use SSHConfig to generate source content.
         assert self.ssh_config_file is not None
-        full_path = path.abspath(path.expanduser(self.ssh_config_file))
-        source: Union[paramiko.config.SSHConfigDict, Dict[str, Any]]
-        if path.exists(full_path):
+        full_path = os.path.abspath(os.path.expanduser(self.ssh_config_file))
+        source: paramiko.config.SSHConfigDict | dict[str, typing.Any]
+        if os.path.exists(full_path):
             ssh_config_instance = paramiko.SSHConfig()
             with io.open(full_path, "rt", encoding="utf-8") as f:
                 ssh_config_instance.parse(f)
@@ -1004,7 +999,7 @@ results={results}
             source = {}
 
         # Keys get normalized to lower-case
-        proxy: Optional[paramiko.proxy.ProxyCommand]
+        proxy: paramiko.proxy.ProxyCommand | None
         if "proxycommand" in source:
             proxy = paramiko.ProxyCommand(source["proxycommand"])
         elif "proxyjump" in source:
@@ -1033,7 +1028,7 @@ results={results}
 
         return connect_dict
 
-    def _connect_params_dict(self) -> Dict[str, Any]:
+    def _connect_params_dict(self) -> dict[str, typing.Any]:
         """Generate dictionary of Paramiko connection parameters."""
         conn_dict = {
             "hostname": self.host,
@@ -1061,7 +1056,7 @@ results={results}
         self,
         output: str,
         strip_command: bool = False,
-        command_string: Optional[str] = None,
+        command_string: str | None = None,
         strip_prompt: bool = False,
     ) -> str:
         """Strip out command echo and trailing router prompt."""
@@ -1107,7 +1102,7 @@ results={results}
             self.serial_login()
         elif self.protocol == "ssh":
             ssh_connect_params = self._connect_params_dict()
-            self.remote_conn_pre: Optional[paramiko.SSHClient]
+            self.remote_conn_pre: paramiko.SSHClient | None
             self.remote_conn_pre = self._build_ssh_client()
 
             # initiate SSH connection
@@ -1220,7 +1215,7 @@ results={results}
         # Load host_keys for better SSH security
         if self.system_host_keys:
             remote_conn_pre.load_system_host_keys()
-        if self.alt_host_keys and path.isfile(self.alt_key_file):
+        if self.alt_host_keys and os.path.isfile(self.alt_key_file):
             remote_conn_pre.load_host_keys(self.alt_key_file)
 
         # Default is to automatically add untrusted hosts (make sure appropriate for your env)
@@ -1254,7 +1249,7 @@ results={results}
         self,
         command: str = "terminal length 0",
         cmd_verify: bool = True,
-        pattern: Optional[str] = None,
+        pattern: str | None = None,
     ) -> str:
         """Disable paging default to a Cisco CLI method.
 
@@ -1266,8 +1261,8 @@ results={results}
         """
 
         command = self.normalize_cmd(command)
-        log.debug("In disable_paging")
-        log.debug(f"Command: {command}")
+        logger.debug("In disable_paging")
+        logger.debug(f"Command: {command}")
         self.write_channel(command)
         # Make sure you read until you detect the command echo (avoid getting out of sync)
         if cmd_verify and self.global_cmd_verify is not False:
@@ -1279,15 +1274,15 @@ results={results}
             output = self.read_until_pattern(pattern=pattern, read_timeout=20)
         else:
             output = self.read_until_prompt()
-        log.debug(f"{output}")
-        log.debug("Exiting disable_paging")
+        logger.debug(f"{output}")
+        logger.debug("Exiting disable_paging")
         return output
 
     def set_terminal_width(
         self,
         command: str = "",
         cmd_verify: bool = False,
-        pattern: Optional[str] = None,
+        pattern: str | None = None,
     ) -> str:
         """CLI terminals try to automatically adjust the line based on the width of the terminal.
         This causes the output to get distorted when accessed programmatically.
@@ -1316,7 +1311,7 @@ results={results}
         pri_prompt_terminator: str = "#",
         alt_prompt_terminator: str = ">",
         delay_factor: float = 1.0,
-        pattern: Optional[str] = None,
+        pattern: str | None = None,
     ) -> str:
         """Sets self.base_prompt
 
@@ -1365,7 +1360,7 @@ results={results}
     def find_prompt(
         self,
         delay_factor: float = 1.0,
-        pattern: Optional[str] = None,
+        pattern: str | None = None,
     ) -> str:
         """Finds the current network device prompt, last line only.
 
@@ -1406,14 +1401,14 @@ results={results}
         self.clear_buffer()
         if not prompt:
             raise ValueError(f"Unable to find prompt: {prompt}")
-        log.debug(f"[find_prompt()]: prompt is {prompt}")
+        logger.debug(f"[find_prompt()]: prompt is {prompt}")
         return prompt
 
     def clear_buffer(
         self,
         backoff: bool = True,
         backoff_max: float = 3.0,
-        delay_factor: Optional[float] = None,
+        delay_factor: float | None = None,
     ) -> str:
         """Read any data available in the channel."""
 
@@ -1430,7 +1425,7 @@ results={results}
             if not data:
                 break
             # Double sleep time each time we detect data
-            log.debug("Clear buffer detects data in the channel")
+            logger.debug("Clear buffer detects data in the channel")
             if backoff:
                 sleep_time *= 2
                 sleep_time = backoff_max if sleep_time >= backoff_max else sleep_time
@@ -1465,7 +1460,7 @@ results={results}
         strip_command: bool = True,
         normalize: bool = True,
         cmd_verify: bool = False,
-    ) -> Union[str, List[Any], Dict[str, Any]]:
+    ) -> str:
         """Execute command_string on the SSH channel using a delay-based mechanism. Generally
         used for show commands.
 
@@ -1512,7 +1507,7 @@ results={results}
         )
         return output
 
-    def _send_command_timing_str(self, *args: Any, **kwargs: Any) -> str:
+    def _send_command_timing_str(self, *args: typing.Any, **kwargs: typing.Any) -> str:
         """Wrapper for `send_command_timing` method that always returns a
         string"""
         output = self.send_command_timing(*args, **kwargs)
@@ -1533,7 +1528,7 @@ results={results}
         else:
             return a_string
 
-    def _first_line_handler(self, data: str, search_pattern: str) -> Tuple[str, bool]:
+    def _first_line_handler(self, data: str, search_pattern: str) -> tuple[str, bool]:
         """
         In certain situations the first line will get repainted which causes a false
         match on the terminating pattern.
@@ -1573,16 +1568,16 @@ results={results}
     @flush_session_log
     @select_cmd_verify
     def send_command(
-        self,
+        self: BaseConnection,
         command_string: str,
-        expect_string: Optional[str] = None,
-        read_timeout: float = 10.0,
+        expect_string: str | None = None,
+        read_timeout: float = 60.0,  # todo: this is reason to switch to an async module.  Commands were timing out that can only be explained with thread contention.
         auto_find_prompt: bool = True,
         strip_prompt: bool = True,
         strip_command: bool = True,
         normalize: bool = True,
         cmd_verify: bool = True,
-    ) -> Union[str, List[Any], Dict[str, Any]]:
+    ) -> str:
         """Execute command_string on the SSH channel using a pattern-based mechanism. Generally
         used for show commands. By default this method will keep waiting to receive data until the
         network device prompt is detected. The current network device prompt will be determined
@@ -1593,11 +1588,6 @@ results={results}
         :param expect_string: Regular expression pattern to use for determining end of output.
             If left blank will default to being based on router prompt.
 
-        :param read_timeout: Maximum time to wait looking for pattern. Will raise ReadTimeout
-            if timeout is exceeded.
-
-        :param auto_find_prompt: Use find_prompt() to override base prompt
-
         :param strip_prompt: Remove the trailing router prompt from the output (default: True).
 
         :param strip_command: Remove the echo of the command from the output (default: True).
@@ -1605,12 +1595,16 @@ results={results}
         :param normalize: Ensure the proper enter is sent at end of command (default: True).
 
         :param cmd_verify: Verify command echo before proceeding (default: True).
-
-        :param raise_parsing_error: Raise exception when parsing output to structured data fails.
         """
-
+        logger.info(
+            "custom send_command: %s",
+            command_string,
+        )
         # Time to delay in each read loop
         loop_delay = 0.025
+
+        if self.read_timeout_override:
+            read_timeout = self.read_timeout_override
 
         if expect_string is not None:
             search_pattern = expect_string
@@ -1620,8 +1614,6 @@ results={results}
         if normalize:
             command_string = self.normalize_cmd(command_string)
 
-        # Start the clock
-        start_time = time.time()
         self.write_channel(command_string)
         new_data = ""
 
@@ -1634,52 +1626,106 @@ results={results}
         output = ""
         # Check only the past N-reads. This is for the case where the output is
         # very large (i.e. searching a very large string for a pattern a whole bunch of times)
-        past_n_reads: Deque[str] = deque(maxlen=DEQUE_SIZE)
+        past_n_reads: collections.deque[str] = collections.deque(maxlen=DEQUE_SIZE)
         first_line_processed = False
 
-        # Keep reading data until search_pattern is found or until read_timeout
-        while time.time() - start_time < read_timeout:
-            if new_data:
-                output += new_data
-                past_n_reads.append(new_data)
+        # Start the clock
+        start_time = last_read_time = now = time.time()
 
-                # Case where we haven't processed the first_line yet (there is a potential issue
-                # in the first line (in cases where the line is repainted).
-                if not first_line_processed:
-                    output, first_line_processed = self._first_line_handler(
-                        output,
-                        search_pattern,
+        # Keep reading until break condition
+        while True:
+            now = time.time()
+            new_data = self.read_channel()
+            output += new_data
+
+            # Condition #1.  Absolute timeout
+            if now - start_time > HTMIKO_ABS_TIMEOUT:
+                msg = (
+                    f"{repr(search_pattern)} Not detected.  "
+                    f"Absolute timer value of {HTMIKO_ABS_TIMEOUT} expired running command '{command_string}'.  "
+                    f"Last data read: {output[-20:]}"
+                )
+                raise ReadTimeout(
+                    msg,
+                    output=output,
+                    timeout=int(HTMIKO_ABS_TIMEOUT),
+                )
+
+            # Condition #2.  Read timeout
+            if now - last_read_time > read_timeout:
+                msg = (
+                    f"{repr(search_pattern)} Not detected.  "
+                    f"Relative read timer value of {read_timeout} expired running command '{command_string}'.  "
+                    f"Last data read: {output[-20:]}"
+                )
+                raise ReadTimeout(msg, output=output, timeout=int(read_timeout))
+
+            # Reset timer or sleep and continue
+            if new_data:
+                last_read_time = now
+            else:
+                time.sleep(loop_delay)
+                continue
+
+            past_n_reads.append(new_data)
+
+            # Conditions 3, 4 & 5:  Pattern found
+
+            # Case where we haven't processed the first_line yet (there is a potential issue
+            # in the first line (in cases where the line is repainted).
+            if not first_line_processed:
+                output, first_line_processed = self._first_line_handler(
+                    output,
+                    search_pattern,
+                )
+                # Check if we have already found our pattern
+                if re.search(search_pattern, output):
+                    logger.info(
+                        "send_command condition met in `not first_line_processed` clause",
                     )
-                    # Check if we have already found our pattern
+                    break
+
+            else:
+                if len(output) <= MAX_CHARS:
                     if re.search(search_pattern, output):
+                        logger.info(
+                            "send_command condition met while under MAX_CHARS limit of %s",
+                            MAX_CHARS,
+                        )
+                        break
+                else:
+                    # Switch to deque mode if output is greater than MAX_CHARS
+                    # Check if pattern is in the past n reads
+                    if re.search(search_pattern, "".join(past_n_reads)):
+                        logger.info(
+                            "send_command condition met past MAX_CHARS limit of %s",
+                            MAX_CHARS,
+                        )
                         break
 
-                else:
-                    if len(output) <= MAX_CHARS:
-                        if re.search(search_pattern, output):
-                            break
-                    else:
-                        # Switch to deque mode if output is greater than MAX_CHARS
-                        # Check if pattern is in the past n reads
-                        if re.search(search_pattern, "".join(past_n_reads)):
-                            break
+        # replacement of self._sanitize_output
 
-            time.sleep(loop_delay)
-            new_data = self.read_channel()
+        # this is directly copied from _sanitize_output in base_connection
+        if strip_command and command_string:
+            output = self.strip_command(command_string, output)
 
-        else:  # nobreak
-            msg = f"""Pattern not detected: {repr(search_pattern)} in output."""
-            raise ReadTimeout(msg)
+        # this is a modification to account for multiple prompts in the output
+        while strip_prompt:
+            response_list = output.splitlines()
+            if response_list and self.base_prompt in response_list[-1]:
+                output = self.RESPONSE_RETURN.join(response_list[:-1])
+            else:
+                break
 
-        output = self._sanitize_output(
-            output,
-            strip_command=strip_command,
-            command_string=command_string,
-            strip_prompt=strip_prompt,
-        )
+        if DEBUG_WRITE:
+            debug_dir = pathlib.Path.cwd() / DEBUG_WRITE_DIR
+            debug_dir.mkdir(exist_ok=True)
+            cmd = cmd.replace("|", "PIPE").replace(" ", "_").strip()
+            with open(debug_dir / f"{self.host}_{cmd}.txt", "w+") as file:
+                file.write(output)
         return output
 
-    def _send_command_str(self, *args: Any, **kwargs: Any) -> str:
+    def _send_command_str(self, *args: typing.Any, **kwargs: typing.Any) -> str:
         """Wrapper for `send_command` method that always returns a string"""
         output = self.send_command(*args, **kwargs)
         assert isinstance(output, str)
@@ -1687,35 +1733,54 @@ results={results}
 
     def send_command_expect(
         self,
-        *args: Any,
-        **kwargs: Any,
-    ) -> Union[str, List[Any], Dict[str, Any]]:
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> str:
         """Support previous name of send_command method."""
         return self.send_command(*args, **kwargs)
 
-    def _multiline_kwargs(self, **kwargs: Any) -> Dict[str, Any]:
+    def _multiline_kwargs(self, **kwargs: typing.Any) -> dict[str, typing.Any]:
         strip_prompt = kwargs.get("strip_prompt", False)
         kwargs["strip_prompt"] = strip_prompt
         strip_command = kwargs.get("strip_command", False)
         kwargs["strip_command"] = strip_command
         return kwargs
 
-    def send_multiline(
+    def send_multiline_expect(
         self,
-        commands: Sequence[Union[str, List[str]]],
+        commands: typing.Iterable[tuple[str, str]],
         multiline: bool = True,
-        **kwargs: Any,
+        **kwargs: typing.Any,
     ) -> str:
         """
-        commands should either be:
+        commands should be:
+            commands = [[cmd1, expect1], [cmd2, expect2], ...]]
+        """
+        output = ""
+        if multiline:
+            kwargs = self._multiline_kwargs(**kwargs)
 
-        commands = [[cmd1, expect1], [cmd2, expect2], ...]]
+        for cmd, expect_string in commands:
+            if not expect_string:
+                expect_string = kwargs.pop("expect_string", None)
+            output += self._send_command_str(
+                cmd,
+                expect_string=expect_string,
+                **kwargs,
+            )
+        return output
 
-        Or
-
+    def send_multiline(
+        self,
+        commands: typing.Iterable[str],
+        multiline: bool = True,
+        **kwargs: typing.Any,
+    ) -> str:
+        """
+        commands should be:
         commands = [cmd1, cmd2, cmd3, ...]
 
-        Any expect_string that is a null-string will use pattern based on
+        typing.Any expect_string that is a null-string will use pattern based on
         device's prompt (unless expect_string argument is passed in via
         kwargs.
 
@@ -1724,39 +1789,24 @@ results={results}
         if multiline:
             kwargs = self._multiline_kwargs(**kwargs)
 
-        default_expect_string = kwargs.pop("expect_string", None)
-        if not default_expect_string:
+        expect_string = kwargs.pop("expect_string", None)
+        if not expect_string:
             auto_find_prompt = kwargs.get("auto_find_prompt", True)
-            default_expect_string = self._prompt_handler(auto_find_prompt)
+            expect_string = self._prompt_handler(auto_find_prompt)
 
-        if commands and isinstance(commands[0], str):
-            # If list of commands just send directly using default_expect_string (probably prompt)
-            for cmd in commands:
-                cmd = str(cmd)
-                output += self._send_command_str(
-                    cmd,
-                    expect_string=default_expect_string,
-                    **kwargs,
-                )
-        else:
-            # If list of lists, then first element is cmd and second element is expect_string
-            for cmd_item in commands:
-                assert not isinstance(cmd_item, str)
-                cmd, expect_string = cmd_item
-                if not expect_string:
-                    expect_string = default_expect_string
-                output += self._send_command_str(
-                    cmd,
-                    expect_string=expect_string,
-                    **kwargs,
-                )
+        for cmd in commands:
+            output += self._send_command_str(
+                cmd,
+                expect_string=expect_string,
+                **kwargs,
+            )
         return output
 
     def send_multiline_timing(
         self,
-        commands: Sequence[str],
+        commands: typing.Iterable[str],
         multiline: bool = True,
-        **kwargs: Any,
+        **kwargs: typing.Any,
     ) -> str:
         if multiline:
             kwargs = self._multiline_kwargs(**kwargs)
@@ -1869,7 +1919,7 @@ results={results}
         self,
         cmd: str = "",
         pattern: str = "ssword",
-        enable_pattern: Optional[str] = None,
+        enable_pattern: str | None = None,
         check_state: bool = True,
         re_flags: int = re.IGNORECASE,
     ) -> str:
@@ -2028,13 +2078,13 @@ results={results}
                 output += self.read_until_prompt(read_entire_line=True)
             if self.check_config_mode():
                 raise ValueError("Failed to exit configuration mode")
-        log.debug(f"exit_config_mode: {output}")
+        logger.debug(f"exit_config_mode: {output}")
         return output
 
     def send_config_from_file(
         self,
-        config_file: Union[str, bytes, "PathLike[Any]"],
-        **kwargs: Any,
+        config_file: str | bytes | PathLike[typing.Any],
+        **kwargs: typing.Any,
     ) -> str:
         """
         Send configuration commands down the SSH channel from a file.
@@ -2055,17 +2105,17 @@ results={results}
     @flush_session_log
     def send_config_set(
         self,
-        config_commands: Union[str, Sequence[str], Iterator[str], TextIO, None] = None,
+        config_commands: typing.Iterable[str],
         *,
         exit_config_mode: bool = True,
-        read_timeout: Optional[float] = None,
-        delay_factor: Optional[float] = None,
-        config_mode_command: Optional[str] = None,
+        read_timeout: float | None = None,
+        delay_factor: float | None = None,
+        config_mode_command: str | None = None,
         cmd_verify: bool = True,
         enter_config_mode: bool = True,
         error_pattern: str = "",
         terminator: str = r"#",
-        bypass_commands: Optional[str] = None,
+        bypass_commands: str | None = None,
     ) -> str:
         """
         Send configuration commands down the SSH channel.
@@ -2111,31 +2161,15 @@ results={results}
         else:
             read_timeout = read_timeout
 
-        if config_commands is None:
-            return ""
-        elif isinstance(config_commands, str):
-            config_commands = (config_commands,)
-
-        if not hasattr(config_commands, "__iter__"):
-            raise ValueError("Invalid argument passed into send_config_set")
-
         if bypass_commands is None:
             # Commands where cmd_verify is automatically disabled reg-ex logical-or
             bypass_commands = r"^banner .*$"
 
+        _config_commands = list(config_commands)
         # Set bypass_commands="" to force no-bypass (usually for testing)
-        bypass_detected = False
-        if bypass_commands:
-            # Make a copy of the iterator
-            config_commands, config_commands_tmp = itertools.tee(config_commands, 2)
-            bypass_detected = any(
-                [
-                    True
-                    for cmd in config_commands_tmp
-                    if re.search(bypass_commands, cmd)
-                ],
-            )
-        if bypass_detected:
+        if bypass_commands and any(
+            re.search(bypass_commands, cmd) for cmd in _config_commands
+        ):
             cmd_verify = False
 
         # Send config commands
@@ -2195,7 +2229,7 @@ results={results}
         if exit_config_mode:
             output += self.exit_config_mode()
         output = self._sanitize_output(output)
-        log.debug(f"{output}")
+        logger.debug(f"{output}")
         return output
 
     def strip_ansi_escape_codes(self, string_buffer: str) -> str:
@@ -2319,6 +2353,7 @@ results={results}
 
     def cleanup(self, command: str = "") -> None:
         """Logout of the session on the network device plus any additional cleanup."""
+        logger.debug("cleanup called on '%s' with nothing being done", command)
         pass
 
     def paramiko_cleanup(self) -> None:
@@ -2352,7 +2387,7 @@ results={results}
             self.remote_conn = None
             if self.session_log:
                 self.session_log.close()
-            log.removeFilter(self._secrets_filter)
+            logger.removeFilter(self._secrets_filter)
 
     def commit(self) -> str:
         """Commit method for platforms that support this."""
