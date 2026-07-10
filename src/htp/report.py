@@ -182,7 +182,9 @@ class LinePolicy(pydantic.BaseModel):
 
 class ConfigPolicy(pydantic.BaseModel):
     filename: str
+    vars_before: list[str] = pydantic.Field(default_factory=list)
     static_variables: dict[str, str] = pydantic.Field(default_factory=dict)
-    line_policies: list[LinePolicy] = pydantic.Field(default_factory=list)
+    vars_after: list[str] = pydantic.Field(default_factory=list)
     include_before: list[str] = pydantic.Field(default_factory=list)
+    line_policies: list[LinePolicy] = pydantic.Field(default_factory=list)
     include_after: list[str] = pydantic.Field(default_factory=list)

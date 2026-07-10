@@ -192,6 +192,18 @@ class Includer:
             line_policies.extend(self._include(incl))
         return line_policies
 
+    def include_vars(self, cp: ConfigPolicy) -> dict:
+        """
+        The object needs to have vars_before, static_variables and vars_after
+        """
+        variables = {}
+        for _vars in cp.vars_before:
+            variables.update(self._include_cache[_vars])
+        variables.update(cp.static_variables)
+        for _vars in cp.vars_after:
+            variables.update(self._include_cache[_vars])
+        return variables
+
 
 def hash_from_line_policies(lps: list[LinePolicy]) -> str:
     import hashlib
@@ -216,12 +228,13 @@ class CompiledConfigPolicy:
         self.policy = policy
         self.includer = includer
         included = includer.include(policy)
+        variables = includer.include_vars(policy)
         self.config = open(config.backups.running_dir / policy.filename).read()
         self.datahash = hash_from_line_policies(included)
 
         self.line_policies = []
         for line_policy in included:
-            line_policy.populate(variables=self.policy.static_variables)
+            line_policy.populate(variables=variables)
             self.line_policies.append(
                 CompiledLinePolicy(
                     line_policy,

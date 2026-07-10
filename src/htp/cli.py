@@ -9,7 +9,7 @@ import readline
 from htp.config import load_config
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=9)
 
 HISTORY = pathlib.Path.home() / ".htp-history"
 HISTORY_MAX = 1000
