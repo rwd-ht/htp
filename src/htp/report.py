@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import os
 import pathlib
 import re
 import uuid
@@ -28,10 +29,11 @@ def get_string(string, variables: dict[str, str]) -> str:
         return string
     varname = match.group(1)
     _test_valid_varname(varname)
-    if not varname.islower():
-        return string
+    if varname.isupper():
+        var = os.getenv(varname)
+    else:
+        var = variables.get(varname)
     start, stop = match.span()
-    var = variables.get(varname)
     if var is None:
         raise RuntimeError(f"{var} not defined")
     return string[:start] + var + string[stop:]
